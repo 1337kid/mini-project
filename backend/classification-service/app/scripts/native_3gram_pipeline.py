@@ -247,6 +247,8 @@ print(f"Found {len(dex_files)} dex file(s): {dex_files}")
 
 # ---------- Single optimized emulator phase ----------
 
+
+docker_exec(["sh","-c",f"adb -s {DEVICE} shell 'rm -rf {EMULATOR_TMP}/*'"])
 print("\n  [process] push + compile + dump + pull")
 
 with ThreadPoolExecutor(max_workers=PARALLEL_WORKERS) as pool:
