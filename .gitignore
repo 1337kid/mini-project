@@ -4,3 +4,10 @@ dist/
 .venv/
 venv/
 __pycache__/
+__pycache__/
+
+# GCP Service Account Key
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json

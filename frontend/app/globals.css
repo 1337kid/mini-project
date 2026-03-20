@@ -24,3 +24,53 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@layer components {
+  .glow-button {
+    @apply relative flex items-center justify-center px-8 py-3 overflow-hidden 
+           font-medium transition-all bg-black rounded-full text-white;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+
+  .glow-button:hover {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.5);
+    @apply scale-[1.02];
+  }
+
+  /* The "Beaming" light effect inside the button */
+  .glow-button::before {
+    content: "";
+    @apply absolute inset-0 w-full h-full;
+    background: linear-gradient(
+      120deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
+    transform: translateX(-100%);
+    transition: transform 0.6s;
+  }
+
+  .glow-button:hover::before {
+    transform: translateX(100%);
+  }
+}
+
+@layer utilities {
+  @keyframes gradient {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+  
+  .animate-gradient {
+    background-size: 300% 100%;
+    animation: gradient 8s linear infinite;
+  }
+}
