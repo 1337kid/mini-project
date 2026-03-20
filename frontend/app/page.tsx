@@ -1,17 +1,75 @@
 "use client";
-import { useState } from "react";
-import Particles from "./components/Particles"; 
+import { useEffect, useState } from "react";
+import Particles from "./components/Particles";
 import GradientText from "./components/GradientText";
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [checksum, setChecksum] = useState<string>("");
+  const [analysisStatus, setAnalysisStatus] = useState<string>("");
+  const [confidenceScore, setConfidenceScore] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!checksum) {
+      return;
+    }
+
+    let isActive = true;
+
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:3000/api/status/${checksum}`,
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch file status");
+        }
+
+        const data = await response.json();
+        if (!isActive) {
+          return;
+        }
+
+        const status = data.status ?? "pending";
+        setAnalysisStatus(status);
+
+        if (status !== "pending") {
+          setConfidenceScore(
+            typeof data.confidence_score === "number"
+              ? data.confidence_score
+              : null,
+          );
+          setMessage(`Analysis complete: ${status}`);
+          setChecksum("");
+        } else {
+          setMessage("Analysis in progress...");
+        }
+      } catch (error) {
+        console.error(error);
+        if (isActive) {
+          setMessage("Could not fetch analysis status. Retrying...");
+        }
+      }
+    };
+
+    checkStatus();
+    const intervalId = setInterval(checkStatus, 5000);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [checksum]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
       setMessage("");
+      setAnalysisStatus("");
+      setConfidenceScore(null);
     }
   };
 
@@ -34,7 +92,20 @@ export default function Home() {
       });
 
       if (response.ok) {
-        setMessage("File uploaded successfully!");
+        const data = await response.json();
+        const returnedChecksum = data?.checksum;
+
+        if (
+          typeof returnedChecksum === "string" &&
+          returnedChecksum.length > 0
+        ) {
+          setChecksum(returnedChecksum);
+          setMessage("File uploaded. Waiting for analysis...");
+          setAnalysisStatus("pending");
+        } else {
+          setMessage("Upload succeeded, but no checksum was returned.");
+        }
+
         setFile(null);
       } else {
         setMessage("Upload failed. Please try again.");
@@ -49,16 +120,14 @@ export default function Home() {
 
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-zinc-50 dark:bg-black font-sans">
-      
       <Particles
         className="absolute inset-0"
         particleCount={100}
-        particleColors={["#333333", "#ffffff", "#555555"]} 
+        particleColors={["#333333", "#ffffff", "#555555"]}
         speed={0.2}
       />
 
       <main className="relative z-10 flex w-full max-w-2xl flex-col items-center px-4 text-center">
-        
         <div className="mb-6">
           <GradientText
             colors={["#5c5c5c", "#ffffff", "#9b9b9b", "#ffffff"]}
@@ -87,7 +156,7 @@ export default function Home() {
 
             <div className="relative group w-full">
               <div className="absolute -inset-0.5 bg-gradient-to-r from-zinc-500 to-zinc-200 rounded-full blur opacity-30 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
-              
+
               <button
                 onClick={handleUpload}
                 disabled={isLoading || !file}
@@ -106,10 +175,21 @@ export default function Home() {
             {message && (
               <p
                 className={`text-sm font-medium ${
-                  message.includes("success") ? "text-green-600" : "text-red-500"
+                  message.toLowerCase().includes("complete")
+                    ? "text-green-600"
+                    : message.toLowerCase().includes("progress") ||
+                        analysisStatus === "pending"
+                      ? "text-zinc-600 dark:text-zinc-300"
+                      : "text-red-500"
                 }`}
               >
                 {message}
+              </p>
+            )}
+
+            {confidenceScore !== null && (
+              <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                Confidence score: {confidenceScore}
               </p>
             )}
           </div>
