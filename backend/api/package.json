@@ -4,8 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "genGoogleKey": "ts-node src/utils/createGoogleKey.ts",
+		"predev": "npm run genGoogleKey",
     "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
+		"prebuild": "npm run genGoogleKey",
     "build": "tsc && tsc-alias",
+		"prestart": "npm run genGoogleKey",
     "start": "node dist/server.js"
   },
   "keywords": [],

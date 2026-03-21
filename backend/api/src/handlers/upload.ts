@@ -4,7 +4,7 @@ import { Storage } from "@google-cloud/storage";
 import { supabase } from "@/lib/supabase";
 import appConfig from "@/config";
 
-const storage = new Storage();
+const storage = new Storage({ keyFilename: "./google-credentials.json" });
 const bucket = storage.bucket(appConfig.GCP_BUCKET_NAME);
 
 export async function uploadAPK(req: Request, res: Response) {
