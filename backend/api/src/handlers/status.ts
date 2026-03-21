@@ -1,18 +1,19 @@
 import { Request, Response } from "express";
-import { pool } from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 
 export async function checkStatus(req: Request, res: Response) {
   try {
     const { checksum } = req.params;
 
-    const query = `SELECT status, confidence_score FROM files WHERE checksum = $1;`;
-    const result = await pool.query(query, [checksum]);
+    const { data: fileData, error } = await supabase
+      .from('files')
+      .select('status, confidence_score, prediction')
+      .eq('checksum', checksum)
+      .single();
 
-    if (result.rows.length === 0) {
+    if (error || !fileData) {
       return res.status(404).json({ message: "File not found" });
     }
-
-    const fileData = result.rows[0];
 
     if (fileData.status === "analyzing" || fileData.status === "pending") {
       return res.status(200).json({ status: "pending", message: "analysing.." });
@@ -21,6 +22,7 @@ export async function checkStatus(req: Request, res: Response) {
     return res.status(200).json({
       status: fileData.status, 
       confidence_score: fileData.confidence_score,
+      prediction: fileData.prediction,
     });
   } catch (err: any) {
     console.error("Status Check Error:", err);

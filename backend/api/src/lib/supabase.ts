@@ -9,5 +9,8 @@ export const supabase = createClient(
       persistSession: false,
       autoRefreshToken: false,
     },
+    db: {
+      schema: "private",
+    }
   }
 );

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
-import { pool } from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import appConfig from "@/config";
 
 const storage = new Storage();
@@ -25,7 +25,7 @@ export async function uploadAPK(req: Request, res: Response) {
 
     (async () => {
       try {
-        const destFileName = `${Date.now()}_${file.originalname}`;
+        const destFileName = `${checksum}.apk`;
         const blob = bucket.file(destFileName);
 
         await new Promise((resolve, reject) => {
@@ -38,33 +38,27 @@ export async function uploadAPK(req: Request, res: Response) {
           blobStream.end(file.buffer);
         });
 
-        const gcpStoragePath = `gs://${appConfig.GCP_BUCKET_NAME}/${destFileName}`;
+        const { data, error } = await supabase
+          .from("files")
+          .upsert(
+            {
+              checksum: checksum,
+              status: "analyzing",
+            },
+            { onConflict: "checksum" },
+          )
+          .select("id")
+          .single();
 
-        const insertQuery = `
-          INSERT INTO files (filename, gcp_storage_path, status, checksum)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (checksum) DO UPDATE SET status = 'analyzing'
-          RETURNING id;
-        `;
-        const dbResult = await pool.query(insertQuery, [
-          file.originalname,
-          gcpStoragePath,
-          "analyzing",
-          checksum,
-        ]);
-        
-        const fileId = dbResult.rows[0].id;
+        if (error) throw error;
+        const fileId = data.id;
 
-        const classifierUrl = process.env.CLASSIFIER_URL || "http://localhost:8080";
-
-        await fetch(`${classifierUrl}/classify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            file_id: fileId,
-            gcp_storage_path: gcpStoragePath,
-          }),
-        });
+        await fetch(
+          `${appConfig.CLASSIFIER_SERVICE_URL}/classify/${checksum}`,
+          {
+            method: "POST",
+          },
+        );
       } catch (bgError) {
         console.error("Background processing failed:", bgError);
       }
