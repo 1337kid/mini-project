@@ -316,9 +316,9 @@ output_file = f"{apk_name}_3gram.csv"
 
 with open(output_file, 'w', newline='') as csvfile:
     writer = csv.writer(csvfile)
-    writer.writerow(["opcode1", "opcode2", "opcode3", "frequency"])
+    writer.writerow(["trigram", "freq"])
     for gram, freq in sorted_ngrams:
-        writer.writerow([gram[0], gram[1], gram[2], freq])
+        writer.writerow([f'{gram[0]}_{gram[1]}_{gram[2]}', freq])
 
 shutil.rmtree(LOCAL_WORK)
 
