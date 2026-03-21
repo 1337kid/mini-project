@@ -9,7 +9,10 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [checksum, setChecksum] = useState<string>("");
   const [analysisStatus, setAnalysisStatus] = useState<string>("");
+  const [prediction, setPrediction] = useState<string>("");
   const [confidenceScore, setConfidenceScore] = useState<number | null>(null);
+
+  const apiUrl: string = process.env.NEXT_PUBLIC_API_URL as string;
 
   useEffect(() => {
     if (!checksum) {
@@ -21,7 +24,7 @@ export default function Home() {
     const checkStatus = async () => {
       try {
         const response = await fetch(
-          `http://localhost:3000/api/status/${checksum}`,
+          `${apiUrl}/status/${checksum}`,
         );
 
         if (!response.ok) {
@@ -42,7 +45,14 @@ export default function Home() {
               ? data.confidence_score
               : null,
           );
-          setMessage(`Analysis complete: ${status}`);
+          setPrediction(
+            data.prediction && data.prediction === 1 ? "Ransomware" : "Benign",
+          );
+          if (status === "failed") {
+            setMessage("Analysis failed. Please try again.");
+          } else {
+            setMessage(`Analysis complete: ${status}`);
+          }
           setChecksum("");
         } else {
           setMessage("Analysis in progress...");
@@ -86,7 +96,7 @@ export default function Home() {
     formData.append("apk", file);
 
     try {
-      const response = await fetch("http://localhost:3000/api/upload", {
+      const response = await fetch(`${apiUrl}/upload`, {
         method: "POST",
         body: formData,
       });
@@ -172,9 +182,9 @@ export default function Home() {
               </button>
             </div>
 
-            {message && (
+            {message && ( 
               <p
-                className={`text-sm font-medium ${
+                className={`font-medium ${
                   message.toLowerCase().includes("complete")
                     ? "text-green-600"
                     : message.toLowerCase().includes("progress") ||
@@ -183,12 +193,13 @@ export default function Home() {
                       : "text-red-500"
                 }`}
               >
-                {message}
+                {message} <br />{" "}
+                {!message.includes("failed") && `Prediction: ${prediction}`}
               </p>
             )}
 
             {confidenceScore !== null && (
-              <p className="text-sm text-zinc-600 dark:text-zinc-300">
+              <p className="text-zinc-600 dark:text-zinc-300">
                 Confidence score: {confidenceScore}
               </p>
             )}
