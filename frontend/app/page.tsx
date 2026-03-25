@@ -238,7 +238,7 @@ export default function Home() {
         >
           <div className="mb-6">
             <GradientText colors={["#5c5c5c", "#ffffff", "#9b9b9b", "#ffffff"]} animationSpeed={5} className="text-5xl md:text-6xl tracking-tight">
-              RansomSentry
+              Sentry
             </GradientText>
           </div>
           <p className="text-lg text-zinc-600 dark:text-zinc-400 mb-10 max-w-lg">
