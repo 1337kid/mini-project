@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import axios from "axios";
 import Particles from "./components/Particles";
 import GradientText from "./components/GradientText";
 
@@ -35,7 +36,7 @@ const loadingSteps = [
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string>("");
-  
+
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [isClosing, setIsClosing] = useState<boolean>(false);
   const [analysisStatus, setAnalysisStatus] = useState<string>("");
@@ -44,6 +45,8 @@ export default function Home() {
   const [animatedScore, setAnimatedScore] = useState<number>(0);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [checksum, setChecksum] = useState<string>("");
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [fileUploaded, setFileUploaded] = useState<boolean>(false);
 
   const apiUrl: string = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -57,10 +60,10 @@ export default function Home() {
   const closeExpandedView = () => {
     if (!isProcessing) {
       setIsClosing(true);
-      setIsExpanded(false); 
-      
+      setIsExpanded(false);
+
       setTimeout(() => {
-        setFile(null); 
+        setFile(null);
         setPrediction("");
         setConfidenceScore(null);
         setAnimatedScore(0);
@@ -68,8 +71,10 @@ export default function Home() {
         setAnalysisStatus("");
         setChecksum("");
         setMessage("");
+        setUploadProgress(0);
+        setFileUploaded(false);
         setIsClosing(false);
-      }, 400); 
+      }, 400);
     }
   };
 
@@ -80,42 +85,57 @@ export default function Home() {
     }
 
     setIsExpanded(true);
-    setAnalysisStatus("uploading"); 
+    setAnalysisStatus("uploading");
     setPrediction("");
     setConfidenceScore(null);
     setAnimatedScore(0);
     setCurrentStep(0);
+    setUploadProgress(0);
+    setFileUploaded(false);
     setMessage("");
 
     const formData = new FormData();
     formData.append("apk", file);
 
     try {
-      const response = await fetch(`${apiUrl}/upload`, {
-        method: "POST",
-        body: formData,
+      const response = await axios.post(`${apiUrl}/upload`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          const percent = progressEvent.total
+            ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            : 0;
+          setUploadProgress(percent);
+        },
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data?.checksum) {
-          setChecksum(data.checksum);
-          setAnalysisStatus("pending"); 
-        } else {
-          setMessage("Upload succeeded, but no tracking ID (checksum) was returned by the API.");
-          closeExpandedView();
-        }
+      const data = response.data;
+
+      if (data?.checksum) {
+        setChecksum(data.checksum);
+        setFileUploaded(true);
+        setAnalysisStatus("pending");
       } else {
-        setMessage(`Upload failed with status: ${response.status}`);
+        setMessage("Upload succeeded, but no tracking ID (checksum) was returned by the API.");
         closeExpandedView();
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        closeExpandedView();
+        return;
+      }
       console.error(error);
       setMessage("A network error occurred while uploading. Is the backend running?");
       closeExpandedView();
     }
   };
+
+  // Sync real upload progress → currentStep during "uploading" phase
+  useEffect(() => {
+    if (analysisStatus === "uploading") {
+      const step = Math.floor((uploadProgress / 100) * (loadingSteps.length - 1));
+      setCurrentStep(Math.min(step, loadingSteps.length - 1));
+    }
+  }, [uploadProgress, analysisStatus]);
 
   useEffect(() => {
     if (!checksum || analysisStatus !== "pending") return;
@@ -124,26 +144,25 @@ export default function Home() {
 
     const checkStatus = async () => {
       try {
-        const response = await fetch(`${apiUrl}/status/${checksum}`);
-        if (!response.ok) throw new Error("Failed to fetch file status");
-
-        const data = await response.json();
+        const response = await axios.get(`${apiUrl}/status/${checksum}`);
         if (!isActive) return;
 
+        const data = response.data;
         const status = data.status ?? "pending";
 
         if (status === "completed" || status === "complete") {
           setAnalysisStatus("complete");
           setConfidenceScore(typeof data.confidence_score === "number" ? data.confidence_score : null);
-          
           setPrediction(data.prediction === 1 ? "Ransomware" : "Benign");
           setChecksum("");
-          
         } else if (status === "failed") {
           setMessage("The Python classification service failed to analyze the file.");
           closeExpandedView();
         }
-      } catch (error) {
+      } catch (error: unknown) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          return;
+        }
         console.error("Polling error:", error);
       }
     };
@@ -178,26 +197,20 @@ export default function Home() {
   }, [analysisStatus, confidenceScore]);
 
   const percent = animatedScore;
-  let themeColorClass = "text-zinc-500";
-  let barColorClass = "bg-zinc-500";
-  let glowStyle = "none";
+  const isMalware = prediction === "Ransomware";
 
-  if (analysisStatus === "complete" && confidenceScore !== null) {
-    const finalPercent = confidenceScore * 100;
-    if (finalPercent <= 50) {
-      themeColorClass = "text-green-500";
-      barColorClass = "bg-green-500";
-      glowStyle = "0 0 10px rgba(34, 197, 94, 0.4)";
-    } else if (finalPercent <= 80) {
-      themeColorClass = "text-yellow-500";
-      barColorClass = "bg-yellow-400";
-      glowStyle = "0 0 10px rgba(250, 204, 21, 0.4)";
-    } else {
-      themeColorClass = "text-red-500";
-      barColorClass = "bg-red-500";
-      glowStyle = "0 0 10px rgba(239, 68, 68, 0.4)";
-    }
-  }
+  // Colours are purely based on prediction — red for malware, green for benign
+  const themeColorClass = analysisStatus === "complete"
+    ? (isMalware ? "text-red-500" : "text-green-500")
+    : "text-zinc-500";
+
+  const barColorClass = analysisStatus === "complete"
+    ? (isMalware ? "bg-red-500" : "bg-green-500")
+    : "bg-zinc-500";
+
+  const glowStyle = analysisStatus === "complete"
+    ? (isMalware ? "0 0 10px rgba(239, 68, 68, 0.4)" : "0 0 10px rgba(34, 197, 94, 0.4)")
+    : "none";
 
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-zinc-50 dark:bg-black font-sans">
@@ -308,21 +321,48 @@ export default function Home() {
                     <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">100%</span>
                   </div>
 
+                  {file && (
+                    <div className={`mt-5 flex items-center gap-2 transition-all duration-300 ${fileUploaded ? "text-green-500" : "text-zinc-500 dark:text-zinc-400"}`}>
+                      {fileUploaded ? (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 shrink-0">
+                            <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm13.36-1.814a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-xs font-mono font-semibold truncate max-w-[220px]">
+                            Uploaded — <span className="font-bold">{file.name}</span>
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 shrink-0 animate-pulse">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                          </svg>
+                          <span className="text-xs font-mono truncate max-w-[220px]">
+                            Uploading <span className="text-zinc-700 dark:text-zinc-300 font-semibold">{file.name}</span>
+                            {uploadProgress < 100 && (
+                              <span className="ml-1 text-zinc-400 dark:text-zinc-500">({uploadProgress}%)</span>
+                            )}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                 </div>
               ) : (
 
                 <div className="w-full pt-2">
                   <div className={`flex justify-center mb-4 ${themeColorClass} animate-in zoom-in-75 duration-300`}>
-                    {prediction === "Ransomware" ? <AlertIcon /> : <CheckIcon />}
+                    {isMalware ? <AlertIcon /> : <CheckIcon />}
                   </div>
                   
                   <h3 className={`text-2xl font-bold tracking-tight mb-2 ${themeColorClass}`}>
-                    {prediction === "Ransomware" ? "Threat Detected" : "File Appears Safe"}
+                    {isMalware ? "Threat Detected" : "File Appears Safe"}
                   </h3>
                   
                   <p className="text-sm text-zinc-700 dark:text-zinc-300 mb-8 px-2">
-                    {prediction === "Ransomware" 
-                      ? "High probability of malicious behavior. Ransomware signatures identified." 
+                    {isMalware
+                      ? "High probability of malicious behavior. Ransomware signatures identified."
                       : "No known ransomware signatures detected. Behavior appears benign."}
                   </p>
 
@@ -344,15 +384,14 @@ export default function Home() {
                           return (
                             <div
                               key={i}
-                              className={`flex-1 transform-gpu -skew-x-12 transition-all duration-300 ease-out`}
+                              className="flex-1 transform-gpu -skew-x-12 transition-all duration-300 ease-out"
                               style={{
                                 transitionDelay: `${i * 15}ms`,
-                                backgroundColor: isActive ? "" : "transparent",
                                 opacity: isActive ? 1 : 0.2,
                                 boxShadow: isActive ? glowStyle : "none",
                               }}
                             >
-                               <div className={`w-full h-full ${isActive ? barColorClass : "bg-black/15 dark:bg-white/20"}`} />
+                              <div className={`w-full h-full ${isActive ? barColorClass : "bg-black/15 dark:bg-white/20"}`} />
                             </div>
                           );
                         })}
@@ -368,6 +407,7 @@ export default function Home() {
             </div>
           )}
         </div>
+
       </main>
     </div>
   );
